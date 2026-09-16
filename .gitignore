@@ -1,0 +1,7 @@
+﻿build/
+out/
+.vs/
+*.user
+vcpkg_installed/
+Thumbs.db
+.DS_Store
