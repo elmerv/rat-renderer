@@ -1,6 +1,8 @@
 ﻿struct Particle {
     float3 position;
+    float _pad0 = 0;
     float3 velocity;
+    float _pad1 = 0;
     float4 color;
 };
 
@@ -44,7 +46,12 @@ void compMain(uint3 threadId : SV_DispatchThreadID)
 struct VSOutput {
     float4 position : SV_Position;
     float4 color;
+    float pointSize : SV_PointSize;
 };
+
+struct PSInput {
+    float4 color;
+}
 
 [shader("vertex")]
 VSOutput particleVertMain(
@@ -52,21 +59,22 @@ VSOutput particleVertMain(
     [[vk::location(1)]] float4 inColor    : COLOR)
 {
     VSOutput output;
-    output.position = float4(inPosition, 1.0);  // ? z=0, w=1
+    // output.position = float4(inPosition, 1.0);  // ? z=0, w=1
 
 
     // output.position = float4(0.0, 0.0, 0.0, 1.0);
 
-    // output.position = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(inPosition, 1.0))));
+    output.position = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(inPosition, 1.0))));
 
     output.color    = inColor;
+    output.pointSize = 5.0;
     return output;
 }
 
 [shader("fragment")]
-float4 particleFragMain(VSOutput input) : SV_Target
+float4 particleFragMain(PSInput input) : SV_Target
 {
-    // return input.color;
-    return float4(1.0, 0.0, 0.0, 1.0);  // ← force bright red
+    return input.color;
+    // return float4(1.0, 0.0, 0.0, 1.0);  // ← force bright red
 
 }

@@ -135,7 +135,7 @@ class HelloTriangleApplication
 
 	GLFWwindow *window = nullptr;
 
-
+	uint32_t semaphoreIndex = 0;
 
 	const std::vector<const char *> deviceExtensions = {
 	    vk::KHRSwapchainExtensionName};
@@ -483,7 +483,7 @@ class HelloTriangleApplication
 	void createComputeDescriptorSetLayout()
 	{
 		std::array layoutBindings{
-		    vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr),
+		    vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eCompute | vk::ShaderStageFlagBits::eVertex, nullptr),
 		    vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr),
 		    vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr)};
 
@@ -559,7 +559,7 @@ class HelloTriangleApplication
 
 		for (auto &particle : particles)
 		{
-			float r = 0.25 * sqrtf(rndDist(rndEngine));
+			float r = 0.8 * sqrtf(rndDist(rndEngine));
 
 			float theta = rndDist(rndEngine) * 2.0f * 3.14159265358979323846f;
 
@@ -913,13 +913,17 @@ class HelloTriangleApplication
 		}
 
 		vk::ImageMemoryBarrier barrier = {
-		    .srcAccessMask       = vk::AccessFlagBits::eTransferWrite,
-		    .dstAccessMask       = vk::AccessFlagBits::eTransferRead,
-		    .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
-		    .newLayout           = vk::ImageLayout::eTransferSrcOptimal,
 		    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 		    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-		    .image               = image};
+		    .image               = image,
+			.subresourceRange = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			}
+		
+		};
 
 		uint32_t mipWidth  = width;
 		uint32_t mipHeight = height;
@@ -927,7 +931,7 @@ class HelloTriangleApplication
 		for (uint32_t i = 1; i < mipLevels; i++)
 		{
 			barrier.subresourceRange.baseMipLevel = i - 1;
-			barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
+			barrier.oldLayout                     = vk::ImageLayout::eUndefined;
 			barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
 			barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
 			barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
@@ -937,7 +941,7 @@ class HelloTriangleApplication
 			vk::ImageBlit blit = {
 			    .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
 			    .srcOffsets     = std::array<vk::Offset3D, 2>({{}, {mipWidth, mipHeight, 1}}),
-			    .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = i},
+			    .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = 1},
 			    .dstOffsets     = std::array<vk::Offset3D, 2>({{}, {1 < mipWidth ? mipWidth / 2 : 1, 1 < mipHeight ? mipHeight / 2 : 1, 1}})};
 			commandBuffer.blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image, vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eLinear);
 
@@ -952,8 +956,9 @@ class HelloTriangleApplication
 			}
 		}
 
-		barrier.subresourceRange.baseMipLevel = mipLevels - 1;
-		barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = mipLevels;
+		barrier.oldLayout                     = vk::ImageLayout::eUndefined;
 		barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
 		barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
 		barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
@@ -1188,6 +1193,13 @@ class HelloTriangleApplication
 		cleanupSwapChain();
 		createSwapChain();
 		createImageViews();
+
+		semaphoreIndex = 0;
+		presentCompleteSemaphores.clear();
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
+			presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+		}
+
 	}
 
 
@@ -1200,19 +1212,18 @@ class HelloTriangleApplication
 
 		for (size_t i = 0; i < swapChainImages.size(); i++)
 		{
+			presentCompleteSemaphores.emplace_back(
+				device, vk::SemaphoreCreateInfo());
 			renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
 		}
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
-			
+		
+			inFlightFences.emplace_back(device, vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
+
 			computeFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
 			computeInFlightFences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
-
-			presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-			inFlightFences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
-
-
 
 		}
 	}
@@ -1465,6 +1476,8 @@ class HelloTriangleApplication
 		    .bindingDesc    = bindingDescription,
 		    .attributeDescs = attributeDescs,
 		    .topology       = vk::PrimitiveTopology::ePointList,
+			.depthTest = true,
+			.depthWrite = false
 		};
 
 		particlePipeline = createPipeline(config);
@@ -1504,6 +1517,7 @@ class HelloTriangleApplication
 		vk::Extent2D         extent        = chooseSwapExtent(swapChainSupport.capabilities);
 
 		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+
 
 		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
 		{
@@ -1693,19 +1707,23 @@ class HelloTriangleApplication
 
 		vk::PhysicalDeviceFeatures deviceFeatures{};
 
-		vk::DeviceCreateInfo createInfo
-		{
-			.queueCreateInfoCount    = static_cast<uint32_t>(queueCreateInfos.size()),
-			.pQueueCreateInfos       = queueCreateInfos.data(),
-			.enabledExtensionCount   = static_cast<uint32_t>(deviceExtensions.size()),
-		    .ppEnabledExtensionNames = deviceExtensions.data(),
-		    .pEnabledFeatures      = &deviceFeatures};
 
 		vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
 		    {.features = {.samplerAnisotropy = true}},                   // vk::PhysicalDeviceFeatures2
 		    {.synchronization2 = true, .dynamicRendering = true},        // vk::PhysicalDeviceVulkan13Features
 		    {.extendedDynamicState = true}                               // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
 		};
+
+
+		vk::DeviceCreateInfo createInfo
+		{
+			.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+			.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+			.pQueueCreateInfos = queueCreateInfos.data(),
+			.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+			.ppEnabledExtensionNames = deviceExtensions.data(),
+		};
+
 
 		device        = vk::raii::Device(physicalDevice, createInfo);
 		graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
@@ -1830,7 +1848,16 @@ class HelloTriangleApplication
 		{
 			throw std::runtime_error("failed to wait for fence!");
 		}
-		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+		//std::cout << "renderFinished[0]: "
+		//	<< (VkSemaphore)*renderFinishedSemaphores[0] << "\n";
+		//std::cout << "renderFinished[1]: "
+		//	<< (VkSemaphore)*renderFinishedSemaphores[1] << "\n";
+		//std::cout << "computeFinished[1]: "
+		//	<< (VkSemaphore)*computeFinishedSemaphores[1] << "\n";
+		//std::cout << "inFlightFence[0]: "
+		//	<< (VkFence)*inFlightFences[0] << "\n";
+
+		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[semaphoreIndex], nullptr);
 
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebufferResized)
 		{
@@ -1859,7 +1886,7 @@ class HelloTriangleApplication
 
 		std::array waitSemaphores{
 		    *computeFinishedSemaphores[frameIndex],
-		    *presentCompleteSemaphores[frameIndex]
+		    *presentCompleteSemaphores[semaphoreIndex]
 		};
 
 		std::array<vk::PipelineStageFlags, 2> waitStages{vk::PipelineStageFlagBits::eVertexInput,
@@ -1873,13 +1900,13 @@ class HelloTriangleApplication
 		    .commandBufferCount   = 1,
 		    .pCommandBuffers      = &*commandBuffers[frameIndex],
 		    .signalSemaphoreCount = 1,
-		    .pSignalSemaphores    = &*renderFinishedSemaphores[frameIndex]};
+		    .pSignalSemaphores    = &*renderFinishedSemaphores[semaphoreIndex]};
 
 		graphicsQueue.submit(submitInfo, *inFlightFences[frameIndex]);
 
 		const vk::PresentInfoKHR presentInfoKHR{
 		    .waitSemaphoreCount = 1,
-		    .pWaitSemaphores    = &*renderFinishedSemaphores[frameIndex],
+		    .pWaitSemaphores    = &*renderFinishedSemaphores[semaphoreIndex],
 		    .swapchainCount     = 1,
 		    .pSwapchains        = &*swapChain,
 		    .pImageIndices      = &imageIndex};
@@ -1897,6 +1924,7 @@ class HelloTriangleApplication
 
 
 		frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+		semaphoreIndex = (semaphoreIndex + 1) % swapChainImages.size();
 
 	}
 
