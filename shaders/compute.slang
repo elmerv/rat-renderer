@@ -6,13 +6,7 @@
     float4 color;
 };
 
-struct UniformBuffer {
-    float4x4 model;
-    float4x4 view;
-    float4x4 proj;
-    float3 lightPosition;
-    float deltaTime;
-};
+#include "common.slang"
 
 [[vk::binding(0, 0)]]
 ConstantBuffer<UniformBuffer> ubo;

@@ -19,14 +19,7 @@ struct VSInput {
     float3 normal;
 };
 
-struct UniformBuffer {
-    float4x4 model;
-    float4x4 view;
-    float4x4 proj;
-    float3 lightPosition;
-    float deltaTime;
-    float3 cameraPosition;
-};
+#include "common.slang"
 ConstantBuffer<UniformBuffer> ubo;
 
 struct VSOutput

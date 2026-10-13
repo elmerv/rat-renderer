@@ -76,11 +76,20 @@ find_program(SLANGC_EXECUTABLE slangc HINTS $ENV{VULKAN_SDK}/bin REQUIRED)
 
 set(TEMPLATE_DIR ${CMAKE_BINARY_DIR}/${TEMPLATE_NAME})
 
-add_executable (${TEMPLATE_NAME} main.cpp)
-target_sources(${TEMPLATE_NAME} PRIVATE shaders/shader.slang)
-target_sources(${TEMPLATE_NAME} PRIVATE shaders/compute.slang)
-set_source_files_properties(shaders/shader.slang PROPERTIES VS_TOOL_OVERRIDE "None")
-set_source_files_properties(shaders/compute.slang PROPERTIES VS_TOOL_OVERRIDE "None")
+add_executable (${TEMPLATE_NAME}
+  src/main.cpp
+  src/Renderer.cpp
+  src/VulkanContext.cpp
+  src/Swapchain.cpp
+  src/Resources.cpp
+  src/Pipeline.cpp
+  src/Texture.cpp
+  src/Mesh.cpp
+  src/Scene.cpp
+  src/Particles.cpp
+)
+target_sources(${TEMPLATE_NAME} PRIVATE shaders/shader.slang shaders/compute.slang shaders/common.slang)
+set_source_files_properties(shaders/shader.slang shaders/compute.slang shaders/common.slang PROPERTIES VS_TOOL_OVERRIDE "None")
 set_target_properties (${TEMPLATE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEMPLATE_DIR})
 set_target_properties (${TEMPLATE_NAME} PROPERTIES CXX_STANDARD 20)
 target_link_libraries (${TEMPLATE_NAME} Vulkan::cppm glfw)
@@ -110,7 +119,7 @@ add_custom_command(
   OUTPUT  ${SHADERS_DIR}/slang.spv
   COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o ${TEMPLATE_DIR}/shaders/slang.spv
   WORKING_DIRECTORY ${SHADERS_DIR}
-  DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
+  DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.slang"
   COMMENT "Compiling Slang Shaders"
   VERBATIM
 )
@@ -123,7 +132,7 @@ add_custom_command(
     COMMAND ${SLANGC_EXECUTABLE}
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/compute.slang" -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${COMPUTE_ENTRY_POINTS} -o ${TEMPLATE_DIR}/shaders/compute.spv
     WORKING_DIRECTORY ${SHADERS_DIR}
-    DEPENDS ${SHADERS_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/compute.slang"
+    DEPENDS ${SHADERS_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/compute.slang" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.slang"
     COMMENT "Compiling Compute Shader"
     VERBATIM
 )
