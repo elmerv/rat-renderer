@@ -1,11 +1,11 @@
 # rat-renderer
 
-PLEASE NOTE THIS README WAS BUILT WITH CLAUDE AS I'VE BEEN USING IT TO BUILD THIS RENDERER AND LEARN ABOUT VULKAN.
 
 A real-time renderer built from scratch in **Vulkan 1.3** with C++20 and **Slang** shaders. It started from the Vulkan Tutorial and grew into a small engine with a GPU compute particle system, a mesh abstraction, and a debugging workflow built around RenderDoc.
 
 <!-- Add a hero screenshot or GIF here -->
 ![Viking room with GPU particles](github_images/render_10_02_2026.png)
+![Energy-normalized Blinn-Phong lighting with point-light attenuation (Shadows incoming...)](github_images/lightFunction.gif)
 
 ## Features
 
@@ -115,3 +115,5 @@ I used RenderDoc to find GPU bugs that produced no crash or validation error, on
 ## References
 - [Vulkan Tutorial](https://vulkan-tutorial.com)
 - Hillaire, *A Scalable and Production Ready Sky and Atmosphere Rendering Technique* (planned)
+
+PLEASE NOTE THIS README WAS BUILT WITH CLAUDE AS I'VE BEEN USING IT TO BUILD THIS RENDERER AND LEARN ABOUT VULKAN.

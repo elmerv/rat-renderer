@@ -33,8 +33,8 @@ import vulkan_hpp;
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
-const uint32_t WIDTH  = 800;
-const uint32_t HEIGHT = 600;
+const uint32_t WIDTH  = 1200;
+const uint32_t HEIGHT = 800;
 
 const std::string MODEL_PATH   = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
@@ -56,6 +56,7 @@ struct Vertex
 	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 texCoord;
+	glm::vec3 normal;
 
 	static vk::VertexInputBindingDescription getBindingDescription()
 	{
@@ -63,13 +64,14 @@ struct Vertex
 			.binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
 	}
 
-	static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions()
+	static std::array<vk::VertexInputAttributeDescription, 4> getAttributeDescriptions()
 	{
 		return {
 			{
 				{.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, pos)},
 				{.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, color)},
-				{.location = 2, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, texCoord)}
+				{.location = 2, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, texCoord)},
+				{.location = 3, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, normal)}
 			} };
 	}
 
@@ -91,7 +93,7 @@ namespace std {
 }
 
 
-class HelloTriangleApplication
+class RatRenderer
 {
   public:
 	void run()
@@ -195,7 +197,9 @@ class HelloTriangleApplication
 		glm::mat4 model;
 		glm::mat4 view;
 		glm::mat4 proj;
+		glm::vec3 lightPosition;
 		float     deltaTime;
+		glm::vec3 cameraPosition;
 	};
 
 
@@ -276,6 +280,12 @@ class HelloTriangleApplication
 	};
 
 
+	struct MeshPushConstants {
+		glm::mat4 modelMatrix;
+		glm::mat4 normalMatrix;
+	};
+
+
 	struct PipelineConfig {
 		std::string vertEntry;
 		std::string fragEntry;
@@ -305,10 +315,10 @@ class HelloTriangleApplication
 	// planes
 	// 
 	const std::vector<Vertex> plane_vertices = {
-	    {{-0.5f, -0.5f, 0.0f}, {0.2f, 0.0f, 0.4f}, {1.0f, 0.0f}},
-	    {{0.5f, -0.5f, 0.0f}, {0.0f, 0.3f, 0.0f}, {0.0f, 0.0f}},
-	    {{0.5f, 0.5f, 0.0f}, {0.3f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+		{{-0.5f, -0.5f, 0.0f}, {0.2f, 0.0f, 0.4f}, {1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+	    {{0.5f, -0.5f, 0.0f}, {0.0f, 0.3f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+	    {{0.5f, 0.5f, 0.0f}, {0.3f, 0.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+	    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}
 
 	};
 		
@@ -339,7 +349,7 @@ class HelloTriangleApplication
 
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height)
 	{
-		auto app = reinterpret_cast<HelloTriangleApplication *>(glfwGetWindowUserPointer(window));
+		auto app = reinterpret_cast<RatRenderer *>(glfwGetWindowUserPointer(window));
 		app->framebufferResized = true;
 	}
 
@@ -362,15 +372,10 @@ class HelloTriangleApplication
 		createCommandPool();
 		createColorResources();
 		createDepthResources();
-		//createTextureImage();
-		//createTextureImageView();
 		createTextureSampler();
-		//createVertexBuffer();
-		//createIndexBuffer();
 		createShaderStorageBuffers();
 		createUniformBuffers();
 		createDescriptorPool();
-		//createDescriptorSets();
 		loadScene();
 		createComputeDescriptorSets();
 		createCommandBuffers();
@@ -411,12 +416,12 @@ class HelloTriangleApplication
 
 	Mesh createPlane(const std::string& texture_path, glm::vec3 position, glm::vec3 scale, glm::vec3 normal, glm::vec3 forward) {
 
-		//glm::mat4 transform = createTransform(position);
 		Mesh meshObj;
 		meshObj.vertices = plane_vertices;
 		meshObj.indices = plane_indices;
 		meshObj.index_count = static_cast<uint32_t>(plane_indices.size());
 		meshObj.transform = createTransform(position, glm::vec3(0.0f), scale);
+
 
 		createVertexBuffer(meshObj);
 		createIndexBuffer(meshObj);
@@ -447,7 +452,7 @@ class HelloTriangleApplication
 		vk::PushConstantRange pushConstantRange{
 			.stageFlags = vk::ShaderStageFlagBits::eVertex,
 			.offset = 0,
-			.size = sizeof(glm::mat4)
+			.size = sizeof(MeshPushConstants)
 		};
 
 		// mesh layout:
@@ -766,13 +771,6 @@ class HelloTriangleApplication
 		return vk::SampleCountFlagBits::e1;
 	}
 
-	//std::vector<Vertex>   vertices;
-	//std::vector<uint16_t> indices;
-
-	//Mesh loadPlane() {
-
-	//}
-
 	Mesh loadModel(std::string& modelPath)
 	{
 
@@ -823,6 +821,9 @@ class HelloTriangleApplication
 
 
 		}
+
+		computeSmoothNormals(vertices, indices);
+
 		Mesh obj{
 			.vertices = vertices,
 			.indices = indices,
@@ -832,6 +833,38 @@ class HelloTriangleApplication
 		return obj;
 	}
 
+	void computeSmoothNormals(std::vector<Vertex>& vertices,
+		const std::vector<uint32_t>& indices)
+	{
+		// 1. zero everything
+		for (auto& v : vertices)
+			v.normal = glm::vec3(0.0f);
+
+		// 2 + 3. accumulate face normals into each triangle's vertices
+		for (size_t i = 0; i < indices.size(); i += 3)
+		{
+			Vertex& a = vertices[indices[i]];
+			Vertex& b = vertices[indices[i + 1]];
+			Vertex& c = vertices[indices[i + 2]];
+
+			// length of this vector is proportional to triangle area,
+			// so bigger triangles contribute more
+			glm::vec3 faceNormal = glm::cross(b.pos - a.pos, c.pos - a.pos);
+
+			a.normal += faceNormal;
+			b.normal += faceNormal;
+			c.normal += faceNormal;
+		}
+
+		// 4. normalize the sums into unit-length directions
+		for (auto& v : vertices)
+		{
+			if (glm::length(v.normal) > 1e-8f)
+				v.normal = glm::normalize(v.normal);
+			else
+				v.normal = glm::vec3(0.0f, 0.0f, 1.0f); // fallback for degenerate vertices
+		}
+	}
 
 	vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features)
 	{
@@ -1247,14 +1280,23 @@ class HelloTriangleApplication
 
 		UniformBufferObject ubo{};
 		ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		
+		glm::vec3 cameraPos(2.0f, 2.0f, 2.0f);
 
-		ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.view = lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+		ubo.cameraPosition = cameraPos;
 
 		ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width)/static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
 
 		ubo.proj[1][1] *= -1;
 
 		ubo.deltaTime = deltaTime;
+		float angle = time * glm::radians(45.0f);   // speed: 45°/sec → full circle every 8 s
+		float radius = 2.5f;                          // distance from the center
+		float height = 1.0f;                          // above the room's floor
+
+		ubo.lightPosition = glm::vec3(radius * cos(angle), radius * sin(angle), height);
 
 		memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 
@@ -1283,7 +1325,7 @@ class HelloTriangleApplication
 
 		std::array<vk::DescriptorSetLayoutBinding, 2> bindings{
 			{
-				{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex},
+				{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
 				{.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}
 			}
 		};
@@ -1431,11 +1473,16 @@ class HelloTriangleApplication
 			*mesh.descriptorSets[frameIndex],
 			nullptr);
 
+
+		MeshPushConstants pc{};
+		pc.modelMatrix = mesh.transform;
+		pc.normalMatrix = glm::transpose(glm::inverse(glm::mat3(mesh.transform)));
+
 		commandBuffer.pushConstants(
 			*pipelineLayout,
 			vk::ShaderStageFlagBits::eVertex,
-			0, sizeof(glm::mat4),
-			&mesh.transform);
+			0, sizeof(pc),
+			&pc);
 		commandBuffer.bindVertexBuffers(0, *(mesh.vertexBuffer), { 0 });
 		commandBuffer.bindIndexBuffer(*(mesh.indexBuffer), 0, vk::IndexType::eUint32);
 		commandBuffer.drawIndexed(static_cast<uint32_t>(mesh.index_count), 1, 0, 0, 0);
@@ -1516,10 +1563,10 @@ class HelloTriangleApplication
 			renderMesh(meshItem, commandBuffer);
 		}
 
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline);
-		commandBuffer.bindVertexBuffers(0, *shaderStorageBuffers[frameIndex], {0});
-		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, computePipelineLayout, 0, *computeDescriptorSets[frameIndex], nullptr);
-		commandBuffer.draw(PARTICLE_COUNT, 1, 0, 0);
+		//commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particlePipeline);
+		//commandBuffer.bindVertexBuffers(0, *shaderStorageBuffers[frameIndex], {0});
+		//commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, computePipelineLayout, 0, *computeDescriptorSets[frameIndex], nullptr);
+		//commandBuffer.draw(PARTICLE_COUNT, 1, 0, 0);
 
 
 		commandBuffer.endRendering();
@@ -2138,9 +2185,9 @@ class HelloTriangleApplication
 	void createInstance()
 	{
 		constexpr vk::ApplicationInfo appInfo{
-		    .pApplicationName   = "Hello Triangle",
+		    .pApplicationName   = "Rat Renderer",
 		    .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-		    .pEngineName        = "No Engine",
+		    .pEngineName        = "Rat Engine",
 		    .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
 		    .apiVersion         = vk::ApiVersion14};
 
@@ -2219,7 +2266,7 @@ int main()
 {
 	try
 	{
-		HelloTriangleApplication app;
+		RatRenderer app;
 		app.run();
 	}
 	catch (const std::exception &e)

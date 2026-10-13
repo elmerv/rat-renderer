@@ -2,6 +2,7 @@
 struct PushConstants
 {
     float4x4 model;
+    float4x4 normalMatrix;
 };
 
 [[vk::push_constant]]
@@ -11,12 +12,15 @@ struct VSInput {
     float3 inPosition;
     float3 inColor;
     float2 inTexCoord;
+    float3 normal;
 };
 
 struct UniformBuffer {
     float4x4 model;
     float4x4 view;
     float4x4 proj;
+    float3 lightPosition;
+    float3 cameraPosition;
     float deltaTime;
 };
 ConstantBuffer<UniformBuffer> ubo;
