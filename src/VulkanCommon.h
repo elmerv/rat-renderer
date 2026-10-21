@@ -29,6 +29,8 @@ constexpr uint32_t HEIGHT = 800;
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
+const int MAX_LIGHTS = 20;
+
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
 #else

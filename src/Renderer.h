@@ -57,6 +57,7 @@ class RatRenderer
 	bool     framebufferResized = false;
 
 	// setup
+	void		initImGui();
 	void        initWindow();
 	static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
 	void        initVulkan();

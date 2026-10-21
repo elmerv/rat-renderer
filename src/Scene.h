@@ -2,6 +2,7 @@
 
 #include "Mesh.h"
 #include "VulkanContext.h"
+#include "Lights.h"
 
 glm::mat4 createTransform(glm::vec3 position = glm::vec3(0.0f), glm::vec3 rotation = glm::vec3(0.0f), glm::vec3 scalar = glm::vec3(1.0f));
 
@@ -11,6 +12,7 @@ class Scene
 {
   public:
 	std::vector<Mesh> meshes;
+	std::vector<Light> lights;
 
 	void load(VulkanContext &ctx);
 

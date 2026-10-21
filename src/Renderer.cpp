@@ -3,11 +3,16 @@
 #include "GpuTypes.h"
 #include "Pipeline.h"
 #include "Resources.h"
+#include "Lights.h"
+#include "LightEditor.h"
 
 #include <cassert>
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
 void RatRenderer::run()
 {
@@ -20,7 +25,35 @@ void RatRenderer::run()
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
+void RatRenderer::initImGui() {
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGui::StyleColorsDark();
+	ImGui_ImplGlfw_InitForVulkan(window, true); // true = ImGui hooks  GLFW mouse/keyboard input
 
+	ImGui_ImplVulkan_InitInfo info{};
+	info.ApiVersion = VK_API_VERSION_1_4;
+	info.Instance = *ctx.instance;
+	info.PhysicalDevice = *ctx.physicalDevice;
+	info.Device = *ctx.device;
+	info.QueueFamily = ctx.graphicsQueueFamilyIndex;
+	info.Queue = *ctx.graphicsQueue;
+	info.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE; // ImGui creates its own pool
+	info.MinImageCount = 2;
+	info.ImageCount = static_cast<uint32_t>(swapchain.images.size());
+	info.UseDynamicRendering = true;
+
+	VkFormat colorFormat = static_cast<VkFormat>(swapchain.surfaceFormat.format);
+	info.PipelineInfoMain.MSAASamples = static_cast<VkSampleCountFlagBits>(ctx.msaaSamples);
+	info.PipelineInfoMain.PipelineRenderingCreateInfo = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+		.colorAttachmentCount = 1,
+		.pColorAttachmentFormats = &colorFormat,
+		.depthAttachmentFormat = static_cast<VkFormat>(ctx.findDepthFormat())
+	};
+
+	ImGui_ImplVulkan_Init(&info);
+}
 void RatRenderer::initWindow()
 {
 	glfwInit();
@@ -65,6 +98,7 @@ void RatRenderer::initVulkan()
 
 	createCommandBuffers();
 	createSyncObjects();
+	initImGui();
 }
 
 void RatRenderer::createDescriptorSetLayout()
@@ -264,6 +298,11 @@ void RatRenderer::mainLoop()
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+		drawLightEditor(scene.lights);
+		ImGui::Render();
 		drawFrame();
 	}
 	ctx.device.waitIdle();
@@ -394,7 +433,14 @@ void RatRenderer::updateUniformBuffer(uint32_t currentImage)
 	float radius = 2.5f;                              // distance from the center
 	float height = 1.0f;                              // above the room's floor
 
-	ubo.lightPosition = glm::vec3(radius * cos(angle), radius * sin(angle), height);
+	//ubo.lightPosition = glm::vec3(radius * cos(angle), radius * sin(angle), height);
+	//ubo.lights = lights.data();
+
+	ubo.lightCount = static_cast<uint32_t>(std::min<size_t>(scene.lights.size(), MAX_LIGHTS));
+	std::copy_n(scene.lights.begin(), ubo.lightCount, ubo.lights);
+
+
+	//ubo.lights.copy_n(lights.data);
 
 	memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
@@ -495,6 +541,9 @@ void RatRenderer::recordMainPass(uint32_t imageIndex, vk::raii::CommandBuffer &c
 	// particles are disabled for now
 	// particles.draw(commandBuffer, frameIndex);
 
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
+
 	commandBuffer.endRendering();
 }
 
@@ -522,6 +571,9 @@ void RatRenderer::recreateSwapChain()
 
 void RatRenderer::cleanup()
 {
+	ImGui_ImplVulkan_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 	swapchain.cleanup();
 	glfwDestroyWindow(window);
 	glfwTerminate();

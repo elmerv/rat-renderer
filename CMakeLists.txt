@@ -20,6 +20,7 @@ find_package(Vulkan 1.4.335 REQUIRED)
 find_package(tinyobjloader REQUIRED)
 find_package(tinygltf REQUIRED)
 find_package(KTX REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 # Set up Vulkan C++ module only if enabled
 if(ENABLE_CPP20_MODULE)
@@ -88,11 +89,11 @@ add_executable (${TEMPLATE_NAME}
   src/Scene.cpp
   src/Particles.cpp
 )
-target_sources(${TEMPLATE_NAME} PRIVATE shaders/shader.slang shaders/compute.slang shaders/common.slang)
+target_sources(${TEMPLATE_NAME} PRIVATE shaders/shader.slang shaders/compute.slang shaders/common.slang "src/Lights.h"  "src/LightEditor.cpp" "src/LightEditor.h")
 set_source_files_properties(shaders/shader.slang shaders/compute.slang shaders/common.slang PROPERTIES VS_TOOL_OVERRIDE "None")
 set_target_properties (${TEMPLATE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${TEMPLATE_DIR})
 set_target_properties (${TEMPLATE_NAME} PROPERTIES CXX_STANDARD 20)
-target_link_libraries (${TEMPLATE_NAME} Vulkan::cppm glfw)
+target_link_libraries (${TEMPLATE_NAME} Vulkan::cppm glfw imgui::imgui)
 target_include_directories (${TEMPLATE_NAME} PRIVATE ${STB_INCLUDEDIR})
 
 # Add compile definition if C++ 20 module is enabled
