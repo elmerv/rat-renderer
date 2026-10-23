@@ -6,7 +6,7 @@ A real-time renderer built from scratch in **Vulkan 1.3** with C++20 and **Slang
 <!-- Add a hero screenshot or GIF here -->
 ![Viking room with GPU particles](github_images/render_10_02_2026.png)
 ![Energy-normalized Blinn-Phong lighting with point-light attenuation (Shadows incoming...)](github_images/lightFunction.gif)
-
+![ImDearGUI light controls with spot, directional, and point light](github_images/lightControls.gif)
 ## Features
 
 **Rendering**
@@ -16,6 +16,13 @@ A real-time renderer built from scratch in **Vulkan 1.3** with C++20 and **Slang
 - Textured OBJ loading with vertex deduplication (hash map)
 - Mipmap generation (blit chain with per-level layout transitions)
 - Anisotropic filtering with a shared sampler
+
+**Lighting**
+- Directional, point, and spot lights, up to 20 per frame
+- Energy-normalized Blinn-Phong shading (Lambertian diffuse divided by π, `(8 + n) / 8π` specular normalization)
+- Distance attenuation for point and spot lights
+- Spot lights with inner and outer cone angles and a smooth falloff between them
+- Dear ImGui light editor: add and remove lights and edit their type, color, intensity, position, direction, and cone angles at runtime
 
 **GPU particle system**
 - Compute shader simulation with ping-pong SSBOs
@@ -38,7 +45,7 @@ A real-time renderer built from scratch in **Vulkan 1.3** with C++20 and **Slang
 - Vulkan SDK 1.4.335 or newer (includes `slangc`)
 - CMake 3.29+
 - A C++20 compiler (developed with MSVC 2022 on Windows)
-- Packages found through `find_package`: glfw3, glm, tinyobjloader, tinygltf, KTX, stb
+- Packages found through `find_package`: glfw3, glm, tinyobjloader, tinygltf, KTX, stb, Dear ImGui (with the GLFW and Vulkan bindings)
 
 **Steps**
 ```
@@ -73,7 +80,42 @@ Two storage buffers hold particle state. Each frame, the compute shader reads fr
 - Fences track the compute and graphics work for each frame in flight.
 
 ### Meshes and descriptors
-Each `Mesh` owns its GPU resources, and `renderMesh` binds the mesh's own descriptor set, pushes its transform, and issues the draw. The shared per-frame uniform buffer (view, projection, delta time) is referenced from every mesh's descriptor set.
+Each `Mesh` owns its GPU resources, and `renderMesh` binds the mesh's own descriptor set, pushes its transform, and issues the draw. The shared per-frame uniform buffer (view, projection, camera position, delta time, and the light array) is referenced from every mesh's descriptor set.
+
+### Lighting
+The scene keeps its lights in a `std::vector<Light>`, which the ImGui editor modifies directly. A `std::vector` can't be copied into a uniform buffer, because its elements live on the heap and only a pointer sits inside the vector. So each frame, `updateUniformBuffer` copies the active lights into a fixed-size array in the UBO and records how many there are:
+
+```cpp
+ubo.lightCount = static_cast<uint32_t>(std::min<size_t>(scene.lights.size(), MAX_LIGHTS));
+std::copy_n(scene.lights.begin(), ubo.lightCount, ubo.lights);
+```
+
+The fragment shader loops over `lightCount` lights and adds up each one's contribution on top of a constant ambient term. A single `Light` struct covers all three types, and each type reads only the fields it needs:
+
+| Type | Uses | Attenuation |
+|---|---|---|
+| Directional | direction | none (light arrives parallel, from infinitely far away) |
+| Point | position | `1 / (1 + 0.09d + 0.032d²)` |
+| Spot | position, direction, inner/outer cone | distance attenuation × `smoothstep(outerCone, innerCone, θ)` |
+
+Cone angles are stored as cosines. The shader gets `cos θ` for free from a dot product of two unit vectors, so it can compare against the stored values without calling any trigonometric functions. The editor converts them to degrees for display.
+
+### GPU struct layout
+The C++ `Light` and `UniformBufferObject` structs have to match the Slang structs byte for byte, under std140 rules: a `vec3` must start on a 16-byte boundary, and every element of an array of structs starts on one too. C++ only aligns a `glm::vec3` to 4 bytes, so a mismatch compiles fine but silently shifts every field after it. Each `vec3` is paired with a `float` that fills the 4 bytes left at the end of its row, and explicit padding fills the remaining gaps:
+
+```
+Light (64 bytes)
+offset  0 | position  (12) | innerCone (4) |
+offset 16 | color     (12) | intensity (4) |
+offset 32 | direction (12) | outerCone (4) |
+offset 48 | type      (4)  | pad       (12)|
+
+UniformBufferObject
+offset   0 | model, view, proj (3 × mat4)
+offset 192 | cameraPosition (12) | deltaTime (4) |
+offset 208 | lightCount     (4)  | pad      (12) |
+offset 224 | lights[20]  (20 × 64 bytes)
+```
 
 ## Debugging with RenderDoc
 
@@ -106,7 +148,8 @@ I used RenderDoc to find GPU bugs that produced no crash or validation error, on
 <!-- Add a cropped screenshot of the empty VS Resources panel next to the full CS panel -->
 
 ## Roadmap
-- [ ] Phong lighting (normals, light in the UBO)
+- [x] Blinn-Phong lighting with directional, point, and spot lights
+- [x] Dear ImGui light editor
 - [ ] Shadow mapping (multi-pass rendering)
 - [ ] PBR (Cook-Torrance BRDF)
 - [ ] Dear ImGui controls for particle parameters

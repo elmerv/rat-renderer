@@ -51,8 +51,6 @@ float3 shadeLight(Light l, float3 worldPos, float3 N, float3 V, float3 albedo){
 
     float3 specular = specColor * ((8 + shininess) / (8.0 * PI)) * nDotH * nDotL;
 
-    // float3 ambient = ambientStrength * lightColor * albedo;
-
     return (diffuse + specular) * l.color * l.intensity * attenuation;
 }
 
