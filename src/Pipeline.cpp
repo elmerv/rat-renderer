@@ -36,7 +36,9 @@ vk::raii::Pipeline createPipeline(VulkanContext &ctx, PipelineConfig &config)
 	    .polygonMode             = vk::PolygonMode::eFill,
 	    .cullMode                = config.cullMode,
 	    .frontFace               = vk::FrontFace::eCounterClockwise,
-	    .depthBiasEnable         = vk::False,
+	    .depthBiasEnable         = config.depthBias,
+		.depthBiasConstantFactor = config.depthBiasConst,
+		.depthBiasSlopeFactor = config.depthBiasSlope,
 	    .lineWidth               = 1.0f};
 
 	vk::PipelineMultisampleStateCreateInfo multisampling{.rasterizationSamples = config.samples, .sampleShadingEnable = vk::False};
@@ -69,9 +71,9 @@ vk::raii::Pipeline createPipeline(VulkanContext &ctx, PipelineConfig &config)
 	}
 
 	vk::PipelineColorBlendStateCreateInfo colorBlending{
-	    .logicOpEnable   = vk::False,
-	    .logicOp         = vk::LogicOp::eCopy,
-	    .attachmentCount = 1,
+		.logicOpEnable = vk::False,
+		.logicOp = vk::LogicOp::eCopy,
+		.attachmentCount = config.hasColor ? 1u: 0u ,
 	    .pAttachments    = &colorBlendAttachment};
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencil{
@@ -82,7 +84,7 @@ vk::raii::Pipeline createPipeline(VulkanContext &ctx, PipelineConfig &config)
 	    .stencilTestEnable     = vk::False};
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
-	    {.stageCount          = 2,
+	    {.stageCount          = config.hasFragment ? 2u: 1u,
 	     .pStages             = shaderStages,
 	     .pVertexInputState   = &vertexInputInfo,
 	     .pInputAssemblyState = &inputAssembly,
@@ -94,8 +96,8 @@ vk::raii::Pipeline createPipeline(VulkanContext &ctx, PipelineConfig &config)
 	     .pDynamicState       = &dynamicstate,
 	     .layout              = *config.layout,
 	     .renderPass          = nullptr},
-	    {.colorAttachmentCount    = 1,
-	     .pColorAttachmentFormats = &config.colorFormat,
+	    {.colorAttachmentCount    = config.hasColor? 1u: 0u,
+	     .pColorAttachmentFormats = config.hasColor? &config.colorFormat : nullptr,
 	     .depthAttachmentFormat   = config.depthFormat}};
 
 	return vk::raii::Pipeline(ctx.device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());

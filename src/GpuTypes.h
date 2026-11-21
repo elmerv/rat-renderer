@@ -11,10 +11,12 @@ struct UniformBufferObject
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 proj;
+	glm::mat4 lightViewProj;
 	glm::vec3 cameraPosition;
 	float     deltaTime;
 	int lightCount;
-	uint32_t pad0[3];
+	int shadowLightIndex;
+	uint32_t pad0[2];
 	Light lights[MAX_LIGHTS];
 };
 

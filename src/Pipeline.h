@@ -30,6 +30,14 @@ struct PipelineConfig
 
 	// culling
 	vk::CullModeFlags cullMode = vk::CullModeFlagBits::eNone;
+
+	bool hasFragment = true;
+	bool hasColor = true;
+	bool depthBias = false;
+	float depthBiasConst = 0.0f;
+	float depthBiasSlope = 0.0f;
+
+
 };
 
 vk::raii::Pipeline createPipeline(VulkanContext &ctx, PipelineConfig &config);
