@@ -7,7 +7,7 @@ A real-time renderer built from scratch in **Vulkan 1.3** with C++20 and **Slang
 ![Viking room with GPU particles](github_images/render_10_02_2026.png)
 ![Energy-normalized Blinn-Phong lighting with point-light attenuation (Shadows incoming...)](github_images/lightFunction.gif)
 ![ImDearGUI light controls with spot, directional, and point light](github_images/lightControls.gif)
-## Features
+## Features  
 
 **Rendering**
 - Vulkan 1.3 dynamic rendering and synchronization2 (no render pass or framebuffer objects)

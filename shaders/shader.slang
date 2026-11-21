@@ -1,6 +1,6 @@
 
 #include "common.slang"
-ConstantBuffer<UniformBuffer> ubo;
+[[vk::binding(0,0)]] ConstantBuffer<UniformBuffer> ubo;
 
 struct PushConstants
 {
@@ -84,7 +84,25 @@ VSOutput vertMain(VSInput input) {
     return output;
 }
 
-Sampler2D texture;
+[[vk::binding(1,0)]] Sampler2D texture;
+[[vk::binding(2,0)]] Sampler2DShadow shadowMap;
+
+
+float shadowFactor(float3 worldPos){
+    float4 position = mul(ubo.lightViewProj, float4(worldPos, 1.0));
+    if(position.w <= 0) {
+        return 1.0;
+    }
+    float3 ndc = position.xyz / position.w;
+    if(ndc.z > 1){
+        return 1.0;
+    }
+
+    float2 normalized_ndc = (ndc.xy * 0.5) + 0.5; 
+    
+    return shadowMap.SampleCmp( normalized_ndc, ndc.z);
+    
+}
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
@@ -102,9 +120,22 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float3 color = ambientStrength * texColor;
 
     for(int i = 0; i < ubo.lightCount; i++){
-        color += shadeLight(ubo.lights[i], vertIn.worldPos, N, viewDir, texColor);
+        float shadow = 1.0f;
+        if( i == ubo.shadowLightIndex){
+            shadow = shadowFactor(vertIn.worldPos);
+        }
+        color += shadeLight(ubo.lights[i], vertIn.worldPos, N, viewDir, texColor) * shadow;
+        
     }
 
     
     return float4(color, 1.0);
+}
+
+
+[shader("vertex")] VSOutput shadowVertMain(VSInput input){
+    VSOutput output;
+    float4 worldPos = mul(push.model, float4(input.inPosition, 1.0));
+    output.pos = mul(ubo.lightViewProj, worldPos);
+    return output;
 }

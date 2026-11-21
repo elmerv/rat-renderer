@@ -24,6 +24,9 @@ class RatRenderer
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
 	vk::raii::Sampler             textureSampler      = nullptr;
 
+	vk::raii::Pipeline shadowPipeline = nullptr; 
+	vk::raii::Sampler shadowSampler = nullptr;
+
 	// render targets (MSAA color resolves into the swapchain image)
 	vk::raii::Image        colorImage       = nullptr;
 	vk::raii::DeviceMemory colorImageMemory = nullptr;
@@ -31,6 +34,12 @@ class RatRenderer
 	vk::raii::Image        depthImage       = nullptr;
 	vk::raii::DeviceMemory depthImageMemory = nullptr;
 	vk::raii::ImageView    depthImageView   = nullptr;
+
+	static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
+	vk::Format shadowFormat = vk::Format::eD32Sfloat;
+	vk::raii::Image shadowImage = nullptr;
+	vk::raii::DeviceMemory shadowImageMemory = nullptr;
+	vk::raii::ImageView  shadowImageView = nullptr;
 
 	// per-frame uniforms
 	std::vector<vk::raii::Buffer>       uniformBuffers;
@@ -65,12 +74,15 @@ class RatRenderer
 	void        createGraphicsPipeline();
 	void        createColorResources();
 	void        createDepthResources();
+	void		createShadowResources();
 	void        createTextureSampler();
 	void        createUniformBuffers();
 	void        createDescriptorPool();
 	void        createMeshDescriptorSets(Mesh &mesh);
 	void        createCommandBuffers();
 	void        createSyncObjects();
+	void		createShadowPipeline();
+	void		recordShadowPass(vk::raii::CommandBuffer& commandBuffer);
 
 	// per frame
 	void mainLoop();

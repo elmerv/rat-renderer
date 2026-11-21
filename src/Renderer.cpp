@@ -79,11 +79,13 @@ void RatRenderer::initVulkan()
 
 	createDescriptorSetLayout();
 	createGraphicsPipeline();
+	createShadowPipeline();
 	particles.createDescriptorSetLayout(ctx);
 	particles.createPipelines(ctx, swapchain.surfaceFormat.format, ctx.findDepthFormat(), ctx.msaaSamples);
 
 	createColorResources();
 	createDepthResources();
+	createShadowResources();
 	createTextureSampler();
 	particles.createStorageBuffers(ctx);
 	createUniformBuffers();
@@ -103,9 +105,10 @@ void RatRenderer::initVulkan()
 
 void RatRenderer::createDescriptorSetLayout()
 {
-	std::array<vk::DescriptorSetLayoutBinding, 2> bindings{
-	    {{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
-	     {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}}};
+	std::array<vk::DescriptorSetLayoutBinding, 3> bindings{
+		{{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
+		 {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+		 {.binding = 2, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}}};
 
 	vk::DescriptorSetLayoutCreateInfo layoutInfo{.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()};
 
@@ -144,6 +147,29 @@ void RatRenderer::createGraphicsPipeline()
 	graphicsPipeline = createPipeline(ctx, config);
 }
 
+void RatRenderer::createShadowPipeline() {
+	vk::raii::ShaderModule shaderModule = createShaderModule(ctx, readFile("shaders/slang.spv"));
+	auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+	PipelineConfig config = {
+		.vertEntry = "shadowVertMain",
+		.shaderModule = &shaderModule,
+		.layout = &pipelineLayout,
+		.colorFormat = vk::Format::eUndefined,
+		.depthFormat = shadowFormat,
+		.samples = vk::SampleCountFlagBits::e1,
+		.bindingDesc = Vertex::getBindingDescription(),
+		.attributeDescs = {attributeDescriptions.begin(), attributeDescriptions.end()},
+		.hasFragment = false,
+		.hasColor = false,
+		.depthBias = true,
+		.depthBiasConst = 1.25f,
+		.depthBiasSlope = 1.75f
+	};
+
+	shadowPipeline = createPipeline(ctx, config);
+}
+
 void RatRenderer::createColorResources()
 {
 	vk::Format colorFormat                 = swapchain.surfaceFormat.format;
@@ -159,7 +185,38 @@ void RatRenderer::createDepthResources()
 	vk::Format depthFormat                 = ctx.findDepthFormat();
 	std::tie(depthImage, depthImageMemory) = createImage(ctx, swapchain.extent.width, swapchain.extent.height, 1, ctx.msaaSamples, depthFormat, vk::ImageTiling::eOptimal,
 	                                                     vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
-	depthImageView                         = createImageView(ctx, depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
+	depthImageView = createImageView(ctx, depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
+}
+
+void RatRenderer::createShadowResources()
+{
+	std::tie(shadowImage, shadowImageMemory) = createImage(
+		ctx,
+		SHADOW_MAP_SIZE, SHADOW_MAP_SIZE,
+		1,
+		vk::SampleCountFlagBits::e1,
+		shadowFormat,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eDepthStencilAttachment |
+		vk::ImageUsageFlagBits::eSampled,
+		vk::MemoryPropertyFlagBits::eDeviceLocal
+	);
+
+	shadowImageView = createImageView(ctx, shadowImage, shadowFormat, vk::ImageAspectFlagBits::eDepth, 1);
+
+	vk::SamplerCreateInfo samplerInfo{
+			   .magFilter = vk::Filter::eLinear,
+			   .minFilter = vk::Filter::eLinear,
+			   .mipmapMode = vk::SamplerMipmapMode::eNearest,
+			   .addressModeU = vk::SamplerAddressMode::eClampToBorder,
+			   .addressModeV = vk::SamplerAddressMode::eClampToBorder,
+			   .addressModeW = vk::SamplerAddressMode::eClampToBorder,
+			   .compareEnable = vk::True,
+			   .compareOp = vk::CompareOp::eLessOrEqual,
+			   .minLod = 0.0f,
+			   .maxLod = 0.0f,
+			   .borderColor = vk::BorderColor::eFloatOpaqueWhite };
+	shadowSampler = vk::raii::Sampler(ctx.device, samplerInfo);
 }
 
 void RatRenderer::createTextureSampler()
@@ -205,7 +262,7 @@ void RatRenderer::createDescriptorPool()
 	    {{.type            = vk::DescriptorType::eUniformBuffer,
 	      .descriptorCount = MAX_FRAMES_IN_FLIGHT * (maxMeshes + 1)},
 	     {.type            = vk::DescriptorType::eCombinedImageSampler,
-	      .descriptorCount = MAX_FRAMES_IN_FLIGHT * maxMeshes},
+	      .descriptorCount = MAX_FRAMES_IN_FLIGHT * maxMeshes * 2},
 	     {.type            = vk::DescriptorType::eStorageBuffer,
 	      .descriptorCount = MAX_FRAMES_IN_FLIGHT * 2}}};
 
@@ -241,6 +298,12 @@ void RatRenderer::createMeshDescriptorSets(Mesh &mesh)
 		    .imageView   = *mesh.texture.view,
 		    .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
 
+		vk::DescriptorImageInfo shadowInfo{
+			.sampler = *shadowSampler,
+			.imageView = *shadowImageView,
+			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+		};
+
 		std::array descriptorWrites{
 		    vk::WriteDescriptorSet{
 		        .dstSet          = *mesh.descriptorSets[i],
@@ -253,7 +316,15 @@ void RatRenderer::createMeshDescriptorSets(Mesh &mesh)
 		        .dstBinding      = 1,
 		        .descriptorCount = 1,
 		        .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
-		        .pImageInfo      = &imageInfo}};
+		        .pImageInfo      = &imageInfo},
+			vk::WriteDescriptorSet{
+				.dstSet = *mesh.descriptorSets[i],
+				.dstBinding = 2,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.pImageInfo = &shadowInfo
+			}
+		};
 
 		ctx.device.updateDescriptorSets(descriptorWrites, {});
 	}
@@ -439,6 +510,18 @@ void RatRenderer::updateUniformBuffer(uint32_t currentImage)
 	ubo.lightCount = static_cast<uint32_t>(std::min<size_t>(scene.lights.size(), MAX_LIGHTS));
 	std::copy_n(scene.lights.begin(), ubo.lightCount, ubo.lights);
 
+	ubo.shadowLightIndex = 1;
+	const Light& sl = scene.lights[1];
+
+	glm::vec3 dir = glm::normalize(sl.direction);
+	
+	glm::vec3 up = std::abs(dir.z) > 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(0, 0, 1);
+	glm::mat4 lightView = glm::lookAt(sl.position, sl.position + dir, up);
+
+	float fov = 2.0f * std::acos(sl.outerCone) + glm::radians(5.0f);
+	glm::mat4 lightProj = glm::perspective(fov, 1.0f, 0.1f, 20.0f);
+	ubo.lightViewProj = lightProj * lightView;
+
 
 	//ubo.lights.copy_n(lights.data);
 
@@ -450,6 +533,7 @@ void RatRenderer::recordCommandBuffer(uint32_t imageIndex, vk::raii::CommandBuff
 	commandBuffer.begin({});
 
 	// future passes (e.g. shadow map) go before the main pass
+	recordShadowPass(commandBuffer);
 	recordMainPass(imageIndex, commandBuffer);
 
 	// transition the swapchain image so it can be presented
@@ -459,7 +543,7 @@ void RatRenderer::recordCommandBuffer(uint32_t imageIndex, vk::raii::CommandBuff
 	    vk::ImageLayout::eColorAttachmentOptimal,
 	    vk::ImageLayout::ePresentSrcKHR,
 	    vk::AccessFlagBits2::eColorAttachmentWrite,
-	    {},
+		{},
 	    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 	    vk::PipelineStageFlagBits2::eBottomOfPipe,
 	    vk::ImageAspectFlagBits::eColor);
@@ -546,6 +630,63 @@ void RatRenderer::recordMainPass(uint32_t imageIndex, vk::raii::CommandBuffer &c
 
 	commandBuffer.endRendering();
 }
+
+void RatRenderer::recordShadowPass(vk::raii::CommandBuffer &commandBuffer) {
+	transitionImageLayout(
+		commandBuffer,
+		*shadowImage,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::eDepthAttachmentOptimal,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::PipelineStageFlagBits2::eFragmentShader | 
+			vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+			vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::ImageAspectFlagBits::eDepth
+	);
+
+	vk::RenderingAttachmentInfo depthAttachment{
+	.imageView = shadowImageView,
+	.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+	.loadOp = vk::AttachmentLoadOp::eClear,
+	.storeOp = vk::AttachmentStoreOp::eStore,
+	.clearValue = vk::ClearDepthStencilValue(1.0f, 0) };
+
+	vk::Extent2D shadowExtent{ SHADOW_MAP_SIZE, SHADOW_MAP_SIZE };
+
+	vk::RenderingInfo renderingInfo{
+	.renderArea = {.offset = {0, 0}, .extent = shadowExtent},
+	.layerCount = 1,
+	.colorAttachmentCount = 0,
+	.pDepthAttachment = &depthAttachment };
+
+	commandBuffer.beginRendering(renderingInfo);
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *shadowPipeline);
+	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(SHADOW_MAP_SIZE), static_cast<float>(SHADOW_MAP_SIZE), 0.0f, 1.0f));
+	commandBuffer.setScissor(0, vk::Rect2D({ 0,0 }, shadowExtent));
+	scene.draw(commandBuffer, *pipelineLayout, frameIndex);
+	commandBuffer.endRendering();
+
+	transitionImageLayout(
+		commandBuffer,
+		*shadowImage,
+		vk::ImageLayout::eDepthAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::AccessFlagBits2::eShaderSampledRead,
+		vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eDepth
+	);
+
+
+
+
+
+}
+
 
 void RatRenderer::recreateSwapChain()
 {
